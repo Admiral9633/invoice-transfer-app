@@ -258,12 +258,14 @@ Convert a single page of the invoice PDF to a PNG image.
           line      {type:'line',      points:[x,y,...], stroke, strokeWidth}
           arrow     {type:'arrow',     points:[x1,y1,x2,y2], stroke, strokeWidth}
           text      {type:'text',      x, y, text, fontSize, fill}
-          redaction {type:'redaction', x, y, width, height, fill}
+          redaction {type:'redaction', x, y, width, height, fill, bg?}
 
         Unlike save-png-as-pdf this keeps the original PDF text/vectors intact
         and writes annotations as real PDF content. Redactions use PyMuPDF
         add_redact_annot + apply_redactions, which permanently removes the
-        underlying content (true redaction, not just an overlay).
+        underlying content (true redaction, not just an overlay). When a
+        redaction sets bg:true the area is filled with the sampled PDF
+        background colour instead of black (whiteout).
         """
         import math
         import fitz  # PyMuPDF
@@ -326,6 +328,59 @@ Convert a single page of the invoice PDF to a PNG image.
                 ys = [p.y for p in pts]
                 return fitz.Rect(min(xs), min(ys), max(xs), max(ys))
 
+            # For "whiteout" redactions we fill with the PDF's background colour
+            # instead of black. Render the unrotated page once (1 point = 1 px)
+            # so we can sample the colour around each rectangle. Done up front,
+            # before any drawing, so we read the original background.
+            needs_bg = any(
+                isinstance(o, dict) and o.get('type') == 'redaction' and o.get('bg')
+                for o in objects
+            )
+            bg_pix = None
+            if needs_bg:
+                saved_rot = page.rotation
+                page.set_rotation(0)
+                bg_pix = page.get_pixmap(alpha=False)
+                page.set_rotation(saved_rot)
+
+            def sample_bg(rect):
+                """Estimate the background colour from a band just outside `rect`
+                (median per channel, robust against text touching the border)."""
+                if bg_pix is None:
+                    return (1, 1, 1)
+                w_px, h_px = bg_pix.width, bg_pix.height
+                x0, y0 = int(rect.x0), int(rect.y0)
+                x1, y1 = int(rect.x1), int(rect.y1)
+                if x1 <= x0 or y1 <= y0:
+                    return (1, 1, 1)
+                margin = 3  # px band sampled just outside the rectangle
+                rs, gs, bs = [], [], []
+
+                def add(px, py):
+                    if 0 <= px < w_px and 0 <= py < h_px:
+                        c = bg_pix.pixel(px, py)
+                        rs.append(c[0]); gs.append(c[1]); bs.append(c[2])
+
+                step_x = max(1, (x1 - x0) // 40)
+                step_y = max(1, (y1 - y0) // 40)
+                for px in range(x0, x1 + 1, step_x):
+                    for d in range(1, margin + 1):
+                        add(px, y0 - d)
+                        add(px, y1 + d)
+                for py in range(y0, y1 + 1, step_y):
+                    for d in range(1, margin + 1):
+                        add(x0 - d, py)
+                        add(x1 + d, py)
+
+                if not rs:
+                    return (1, 1, 1)
+
+                def median(vals):
+                    vals.sort()
+                    return vals[len(vals) // 2]
+
+                return (median(rs) / 255, median(gs) / 255, median(bs) / 255)
+
             redactions = []
 
             for obj in objects:
@@ -336,7 +391,11 @@ Convert a single page of the invoice PDF to a PNG image.
                     if otype == 'redaction':
                         r = rect_from(float(obj['x']), float(obj['y']),
                                       float(obj['width']), float(obj['height']))
-                        redactions.append((r, hex_rgb(obj.get('fill'), (0, 0, 0))))
+                        if obj.get('bg'):
+                            fill = sample_bg(r)
+                        else:
+                            fill = hex_rgb(obj.get('fill'), (0, 0, 0))
+                        redactions.append((r, fill))
                     elif otype == 'rect':
                         r = rect_from(float(obj['x']), float(obj['y']),
                                       float(obj['width']), float(obj['height']))

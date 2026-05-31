@@ -55,6 +55,7 @@ import {
   Copy,
   PanelRight,
   EyeOff,
+  PaintBucket,
   PenTool,
   Search,
 } from 'lucide-react';
@@ -73,7 +74,7 @@ import { ApiService } from '@/lib/api';
 
 // ── Types (adapted from SnapOtter editor-store.ts) ─────────────────────────
 
-type ToolType = 'move' | 'brush' | 'eraser' | 'text' | 'rect' | 'ellipse' | 'arrow' | 'redaction' | 'signature';
+type ToolType = 'move' | 'brush' | 'eraser' | 'text' | 'rect' | 'ellipse' | 'arrow' | 'redaction' | 'whiteout' | 'signature';
 
 interface LineObj {
   id: string;
@@ -135,6 +136,10 @@ interface RedactionObj {
   width: number;
   height: number;
   fill: string;
+  /** When true, the area is filled with the detected PDF background colour
+   *  instead of a solid colour („whiteout“). Content underneath is still
+   *  permanently removed. */
+  bg?: boolean;
 }
 
 type CanvasObj = LineObj | RectObj | EllipseObj | TextObj | ArrowObj | RedactionObj;
@@ -752,6 +757,8 @@ export function ImageEditor({
           setPreviewShape({ id: genId(), type: 'rect', x: pos.x, y: pos.y, width: 0, height: 0, stroke: strokeColor, strokeWidth, fill: 'transparent' });
         } else if (tool === 'redaction') {
           setPreviewShape({ id: genId(), type: 'redaction', x: pos.x, y: pos.y, width: 0, height: 0, fill: '#000000' });
+        } else if (tool === 'whiteout') {
+          setPreviewShape({ id: genId(), type: 'redaction', x: pos.x, y: pos.y, width: 0, height: 0, fill: '#ffffff', bg: true });
         } else if (tool === 'ellipse') {
           setPreviewShape({ id: genId(), type: 'ellipse', x: pos.x, y: pos.y, radiusX: 0, radiusY: 0, stroke: strokeColor, strokeWidth, fill: 'transparent' });
         } else if (tool === 'arrow') {
@@ -1093,7 +1100,7 @@ export function ImageEditor({
             width={obj.width}
             height={obj.height}
             fill={obj.fill}
-            stroke="#ef4444"
+            stroke={obj.bg ? '#3b82f6' : '#ef4444'}
             strokeWidth={1 / (stageRef.current?.scaleX() ?? 1)}
             dash={[6 / (stageRef.current?.scaleX() ?? 1), 4 / (stageRef.current?.scaleX() ?? 1)]}
           />
@@ -1118,6 +1125,7 @@ export function ImageEditor({
     { id: 'ellipse', Icon: Circle,       label: 'Ellipse',       shortcut: '' },
     { id: 'arrow',   Icon: MoveRight,    label: 'Pfeil',         shortcut: '' },
     { id: 'redaction', Icon: EyeOff,     label: 'Schwärzen (echt)', shortcut: '' },
+    { id: 'whiteout',  Icon: PaintBucket, label: 'Hintergrundfarbe', shortcut: '' },
   ];
 
   // ── JSX ────────────────────────────────────────────────────────────────
@@ -1602,8 +1610,18 @@ export function ImageEditor({
               </p>
             )}
 
+            {/* Whiteout hint */}
+            {tool === 'whiteout' && (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Ziehe ein Rechteck über sensible Daten. Der Inhalt wird
+                <span className="text-foreground font-medium"> dauerhaft entfernt</span> und der
+                Bereich mit der <span className="text-foreground font-medium">Hintergrundfarbe des PDF</span> gefüllt –
+                die Schwärzung fällt dadurch nicht auf.
+              </p>
+            )}
+
             {/* Color */}
-            {tool !== 'redaction' && tool !== 'signature' && tool !== 'eraser' && (
+            {tool !== 'redaction' && tool !== 'whiteout' && tool !== 'signature' && tool !== 'eraser' && (
               <div className="flex items-center gap-3">
                 <Label className="text-xs w-16 shrink-0">Farbe</Label>
                 <ColorPicker value={strokeColor} onChange={setStrokeColor} />
@@ -1612,7 +1630,7 @@ export function ImageEditor({
             )}
 
             {/* Stroke width */}
-            {tool !== 'text' && tool !== 'move' && tool !== 'redaction' && (
+            {tool !== 'text' && tool !== 'move' && tool !== 'redaction' && tool !== 'whiteout' && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Stärke</Label>
