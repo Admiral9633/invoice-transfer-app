@@ -319,7 +319,7 @@ export default function DashboardPage() {
                 <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
                 <Area
                   dataKey="uebertragen"
-                  type="natural"
+                  type="monotone"
                   fill="url(#fillUebertragen)"
                   stroke="var(--color-uebertragen)"
                   strokeWidth={2}
@@ -327,7 +327,7 @@ export default function DashboardPage() {
                 />
                 <Area
                   dataKey="hochgeladen"
-                  type="natural"
+                  type="monotone"
                   fill="url(#fillHochgeladen)"
                   stroke="var(--color-hochgeladen)"
                   strokeWidth={2}
