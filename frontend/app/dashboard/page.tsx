@@ -4,10 +4,27 @@ import { useEffect, useState, useMemo } from 'react';
 import { format, subDays, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { FileText, CheckCircle2, XCircle, Clock } from 'lucide-react';
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Bar,
+  BarChart,
+  Pie,
+  PieChart,
+  Label,
+} from 'recharts';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+} from '@/components/ui/chart';
 import type { ChartConfig } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -26,12 +43,25 @@ import type { Invoice } from '@/types/invoice';
 const chartConfig: ChartConfig = {
   hochgeladen: {
     label: 'Hochgeladen',
-    color: 'hsl(var(--chart-1))',
+    color: 'var(--chart-1)',
   },
   uebertragen: {
     label: 'Übertragen',
-    color: 'hsl(var(--chart-2))',
+    color: 'var(--chart-2)',
   },
+};
+
+const statusChartConfig: ChartConfig = {
+  count: { label: 'Rechnungen' },
+  success: { label: 'Erfolgreich', color: 'var(--chart-2)' },
+  pending: { label: 'Ausstehend', color: 'var(--chart-3)' },
+  processing: { label: 'In Bearbeitung', color: 'var(--chart-4)' },
+  failed: { label: 'Fehlgeschlagen', color: 'var(--chart-5)' },
+};
+
+const transferChartConfig: ChartConfig = {
+  erfolgreich: { label: 'Erfolgreich', color: 'var(--chart-2)' },
+  offen: { label: 'Offen / Fehler', color: 'var(--chart-1)' },
 };
 
 const statusLabels: Record<Invoice['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -128,6 +158,33 @@ export default function DashboardPage() {
     [invoices]
   );
 
+  const statusData = useMemo(() => {
+    const counts: Record<Invoice['status'], number> = {
+      success: 0,
+      pending: 0,
+      processing: 0,
+      failed: 0,
+    };
+    for (const i of invoices) counts[i.status] = (counts[i.status] ?? 0) + 1;
+    return (Object.keys(counts) as Invoice['status'][])
+      .map((status) => ({
+        status,
+        count: counts[status],
+        fill: `var(--color-${status})`,
+      }))
+      .filter((d) => d.count > 0);
+  }, [invoices]);
+
+  const transferData = useMemo(() => {
+    const paperlessOk = invoices.filter((i) => i.paperless_status === 'success').length;
+    const lexwareOk = invoices.filter((i) => i.lexware_status === 'success').length;
+    const total = invoices.length;
+    return [
+      { ziel: 'Paperless', erfolgreich: paperlessOk, offen: total - paperlessOk },
+      { ziel: 'Lexware', erfolgreich: lexwareOk, offen: total - lexwareOk },
+    ];
+  }, [invoices]);
+
   return (
     <main className="flex-1 p-6 space-y-6 max-w-6xl">
       <div>
@@ -223,7 +280,112 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Invoices Table */}
+      {/* Status distribution + transfer comparison */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="flex flex-col">
+          <CardHeader className="items-center pb-0">
+            <CardTitle>Status-Verteilung</CardTitle>
+            <CardDescription>Alle Rechnungen nach Status</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 pb-0">
+            {loading ? (
+              <Skeleton className="mx-auto h-[240px] w-[240px] rounded-full" />
+            ) : statusData.length === 0 ? (
+              <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
+                Noch keine Daten
+              </div>
+            ) : (
+              <ChartContainer
+                config={statusChartConfig}
+                className="mx-auto aspect-square max-h-[240px]"
+              >
+                <PieChart>
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                  <Pie
+                    data={statusData}
+                    dataKey="count"
+                    nameKey="status"
+                    innerRadius={60}
+                    strokeWidth={4}
+                  >
+                    <Label
+                      content={({ viewBox }) => {
+                        if (viewBox && 'cx' in viewBox && 'cy' in viewBox) {
+                          return (
+                            <text
+                              x={viewBox.cx}
+                              y={viewBox.cy}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                            >
+                              <tspan
+                                x={viewBox.cx}
+                                y={viewBox.cy}
+                                className="fill-foreground text-3xl font-bold"
+                              >
+                                {stats.total}
+                              </tspan>
+                              <tspan
+                                x={viewBox.cx}
+                                y={(viewBox.cy ?? 0) + 22}
+                                className="fill-muted-foreground text-xs"
+                              >
+                                Rechnungen
+                              </tspan>
+                            </text>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                  </Pie>
+                  <ChartLegend
+                    content={<ChartLegendContent nameKey="status" />}
+                    className="-translate-y-2 flex-wrap gap-2 *:justify-center"
+                  />
+                </PieChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="flex flex-col">
+          <CardHeader>
+            <CardTitle>Transfer-Ziele</CardTitle>
+            <CardDescription>Erfolgreiche Übertragungen je Ziel</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1">
+            {loading ? (
+              <Skeleton className="h-[240px] w-full" />
+            ) : (
+              <ChartContainer config={transferChartConfig} className="h-[240px] w-full">
+                <BarChart accessibilityLayer data={transferData} margin={{ top: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="ziel"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tick={{ fontSize: 11 }}
+                    allowDecimals={false}
+                  />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="erfolgreich" stackId="a" fill="var(--color-erfolgreich)" radius={[0, 0, 4, 4]} />
+                  <Bar dataKey="offen" stackId="a" fill="var(--color-offen)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Alle Rechnungen</CardTitle>
