@@ -47,7 +47,7 @@ const chartConfig: ChartConfig = {
   },
   uebertragen: {
     label: 'Übertragen',
-    color: 'var(--chart-2)',
+    color: 'oklch(0.7 0.15 264.376)',
   },
 };
 
@@ -229,10 +229,10 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <Skeleton className="h-[220px] w-full" />
+            <Skeleton className="h-[250px] w-full" />
           ) : (
-            <ChartContainer config={chartConfig} className="h-[220px] w-full">
-              <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
+              <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 12, bottom: 0 }}>
                 <defs>
                   <linearGradient id="fillHochgeladen" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-hochgeladen)" stopOpacity={0.8} />
@@ -243,37 +243,34 @@ export default function DashboardPage() {
                     <stop offset="95%" stopColor="var(--color-uebertragen)" stopOpacity={0.1} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" className="stroke-muted" />
+                <CartesianGrid vertical={false} />
                 <XAxis
                   dataKey="date"
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
                   tick={{ fontSize: 11 }}
+                  minTickGap={24}
                   interval="preserveStartEnd"
                 />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  tick={{ fontSize: 11 }}
-                  allowDecimals={false}
-                />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                <Area
-                  dataKey="hochgeladen"
-                  type="monotone"
-                  fill="url(#fillHochgeladen)"
-                  stroke="var(--color-hochgeladen)"
-                  strokeWidth={2}
-                />
+                <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
                 <Area
                   dataKey="uebertragen"
-                  type="monotone"
+                  type="natural"
                   fill="url(#fillUebertragen)"
                   stroke="var(--color-uebertragen)"
                   strokeWidth={2}
+                  stackId="a"
                 />
+                <Area
+                  dataKey="hochgeladen"
+                  type="natural"
+                  fill="url(#fillHochgeladen)"
+                  stroke="var(--color-hochgeladen)"
+                  strokeWidth={2}
+                  stackId="a"
+                />
+                <ChartLegend content={<ChartLegendContent />} />
               </AreaChart>
             </ChartContainer>
           )}
