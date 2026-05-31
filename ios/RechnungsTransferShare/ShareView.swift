@@ -6,9 +6,16 @@ struct ShareView: View {
     let onDone: () -> Void
     let onCancel: () -> Void
 
-    @State private var pdfData: Data?
-    @State private var filename: String = "dokument.pdf"
+    /// One PDF pulled from the share payload.
+    private struct SharedPDF: Identifiable {
+        let id = UUID()
+        let data: Data
+        let filename: String
+    }
+
+    @State private var documents: [SharedPDF] = []
     @State private var viewState: ViewState = .loading
+    @State private var uploadedCount = 0
 
     enum ViewState {
         case loading
@@ -17,6 +24,8 @@ struct ShareView: View {
         case success
         case failure(String)
     }
+
+    private var totalCount: Int { documents.count }
 
     var body: some View {
         NavigationStack {
@@ -33,17 +42,30 @@ struct ShareView: View {
 
                 // ── Ready to upload ────────────────────────────────────────
                 case .ready:
-                    VStack(spacing: 32) {
+                    VStack(spacing: 24) {
                         Spacer()
-                        Image(systemName: "doc.fill")
-                            .font(.system(size: 72))
+                        Image(systemName: totalCount > 1 ? "doc.on.doc.fill" : "doc.fill")
+                            .font(.system(size: 64))
                             .foregroundStyle(.accent)
-                        Text(filename)
-                            .font(.headline)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+
+                        if totalCount > 1 {
+                            Text("\(totalCount) PDFs bereit")
+                                .font(.headline)
+                        }
+
+                        VStack(spacing: 4) {
+                            ForEach(documents) { doc in
+                                Text(doc.filename)
+                                    .font(totalCount > 1 ? .caption : .headline)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        .padding(.horizontal)
+
                         Button {
-                            Task { await upload() }
+                            Task { await uploadAll() }
                         } label: {
                             Label("Hochladen", systemImage: "arrow.up.circle.fill")
                                 .frame(maxWidth: .infinity)
@@ -60,9 +82,11 @@ struct ShareView: View {
                         ProgressView()
                             .scaleEffect(1.4)
                         Text("Wird hochgeladen…")
-                        Text(filename)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if totalCount > 1 {
+                            Text("\(uploadedCount) von \(totalCount)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                 // ── Success ────────────────────────────────────────────────
@@ -72,11 +96,8 @@ struct ShareView: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 72))
                             .foregroundStyle(.green)
-                        Text("Erfolgreich hochgeladen!")
+                        Text(totalCount > 1 ? "\(totalCount) PDFs hochgeladen!" : "Erfolgreich hochgeladen!")
                             .font(.title3.bold())
-                        Text(filename)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                         Button("Fertig", action: onDone)
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
@@ -102,7 +123,7 @@ struct ShareView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.large)
                             Button("Nochmal") {
-                                viewState = .ready
+                                viewState = documents.isEmpty ? .loading : .ready
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.large)
@@ -124,50 +145,53 @@ struct ShareView: View {
                 }
             }
         }
-        .task { await loadPDF() }
+        .task { await loadPDFs() }
     }
 
-    // MARK: - Load PDF from NSExtensionItem
+    // MARK: - Load PDFs from NSExtensionItems
 
-    private func loadPDF() async {
-        guard
-            let item = extensionContext.inputItems.first as? NSExtensionItem,
-            let attachment = item.attachments?.first
-        else {
-            viewState = .failure("Kein Anhang gefunden.")
-            return
-        }
-
+    private func loadPDFs() async {
         let pdfUTI = UTType.pdf.identifier
+        var loaded: [SharedPDF] = []
 
-        // Some apps share PDFs as a URL, others as raw Data.
-        if attachment.hasItemConformingToTypeIdentifier(pdfUTI) {
+        let attachments = (extensionContext.inputItems as? [NSExtensionItem])?
+            .compactMap { $0.attachments }
+            .flatMap { $0 } ?? []
+
+        for attachment in attachments where attachment.hasItemConformingToTypeIdentifier(pdfUTI) {
             do {
                 let result = try await attachment.loadItem(forTypeIdentifier: pdfUTI)
                 if let fileURL = result as? URL {
-                    pdfData = try Data(contentsOf: fileURL)
-                    filename = fileURL.lastPathComponent
+                    let data = try Data(contentsOf: fileURL)
+                    loaded.append(SharedPDF(data: data, filename: fileURL.lastPathComponent))
                 } else if let data = result as? Data {
-                    pdfData = data
-                } else {
-                    throw UploadError.noData
+                    loaded.append(SharedPDF(data: data, filename: "dokument-\(loaded.count + 1).pdf"))
                 }
-                viewState = .ready
             } catch {
-                viewState = .failure(error.localizedDescription)
+                // Skip a single failing attachment but keep the rest.
+                continue
             }
+        }
+
+        if loaded.isEmpty {
+            viewState = .failure("Keine PDF-Datei gefunden.")
         } else {
-            viewState = .failure("Die geteilte Datei ist kein PDF.")
+            documents = loaded
+            viewState = .ready
         }
     }
 
     // MARK: - Upload
 
-    private func upload() async {
-        guard let data = pdfData else { return }
+    private func uploadAll() async {
+        guard !documents.isEmpty else { return }
         viewState = .uploading
+        uploadedCount = 0
         do {
-            try await UploadService.upload(pdfData: data, filename: filename)
+            for doc in documents {
+                try await UploadService.upload(pdfData: doc.data, filename: doc.filename)
+                uploadedCount += 1
+            }
             viewState = .success
         } catch {
             viewState = .failure(error.localizedDescription)

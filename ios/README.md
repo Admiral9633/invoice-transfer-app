@@ -45,10 +45,15 @@ Ziehe folgende Ordner per Drag & Drop ins Xcode-Projekt-Navigator:
 ```
 ios/
 ├── Shared/
+│   ├── Invoice.swift               → beide Targets (Modell)
 │   └── UploadService.swift         → beide Targets (App + Extension)
 ├── RechnungsTransfer/
 │   ├── RechnungsTransferApp.swift  → Target: RechnungsTransfer
 │   ├── ContentView.swift           → Target: RechnungsTransfer
+│   ├── InvoiceStore.swift          → Target: RechnungsTransfer
+│   ├── InvoiceListView.swift       → Target: RechnungsTransfer
+│   ├── SettingsView.swift          → Target: RechnungsTransfer
+│   ├── StatusBadge.swift           → Target: RechnungsTransfer
 │   └── Info.plist                  → Target: RechnungsTransfer
 └── RechnungsTransferShare/
     ├── ShareViewController.swift   → Target: RechnungsTransferShare
@@ -56,7 +61,7 @@ ios/
     └── Info.plist                  → Target: RechnungsTransferShare
 ```
 
-> **Wichtig:** `UploadService.swift` muss bei **beiden Targets** als Member eingetragen sein.
+> **Wichtig:** `Invoice.swift` und `UploadService.swift` müssen bei **beiden Targets** als Member eingetragen sein.
 > Datei anklicken → rechts unter „Target Membership" beide Haken setzen.
 
 ---
@@ -116,11 +121,22 @@ Hinterlege das Backend hinter einem Reverse-Proxy (nginx/Caddy) mit HTTPS und ec
 
 ## Verwendung
 
-1. PDF in einer beliebigen App öffnen (Safari, Dateien, Mail, …)
+### In der App
+
+1. App öffnen → Tab **Rechnungen**
+2. Über **+** ein oder mehrere PDFs hochladen (Dateien-Auswahl)
+3. Pro Rechnung Status für Lexware & Paperless sehen
+4. **Übertragen** antippen, um den Transfer auszulösen
+5. Nach links wischen zum **Löschen**
+6. Tab **Einstellungen** → Backend-URL setzen und **Verbindung testen**
+
+### Über die Teilen-Erweiterung
+
+1. Ein oder mehrere PDFs in einer beliebigen App öffnen (Safari, Dateien, Mail, …)
 2. Share-Symbol antippen  ☐
 3. **RechnungsTransfer** aus der Liste wählen
-4. Dateiname prüfen → **Hochladen** antippen
-5. ✅ Fertig – die Rechnung erscheint in der Web-App
+4. Dateinamen prüfen → **Hochladen** antippen
+5. ✅ Fertig – die Rechnung erscheint in der Web-App und in der App-Liste
 
 ---
 
@@ -130,13 +146,18 @@ Hinterlege das Backend hinter einem Reverse-Proxy (nginx/Caddy) mit HTTPS und ec
 ios/
 ├── README.md                           ← diese Datei
 ├── Shared/
-│   └── UploadService.swift             ← Multipart-Upload-Logik
-├── RechnungsTransfer/                  ← Haupt-App (Einstellungen + Anleitung)
+│   ├── Invoice.swift                   ← Codable-Modell (Status-Enum + Invoice)
+│   └── UploadService.swift             ← API-Client (Liste, Upload, Transfer, Löschen)
+├── RechnungsTransfer/                  ← Haupt-App (Rechnungsliste + Einstellungen)
 │   ├── RechnungsTransferApp.swift
-│   ├── ContentView.swift
+│   ├── ContentView.swift               ← TabView (Rechnungen / Einstellungen)
+│   ├── InvoiceStore.swift              ← ObservableObject mit Lade-/Mutationslogik
+│   ├── InvoiceListView.swift           ← Liste mit Status, Upload, Transfer, Löschen
+│   ├── SettingsView.swift              ← Backend-URL + Verbindungstest
+│   ├── StatusBadge.swift               ← Status-Pille (SwiftUI)
 │   └── Info.plist
 └── RechnungsTransferShare/             ← Share Extension
     ├── ShareViewController.swift       ← UIViewController-Wrapper
-    ├── ShareView.swift                 ← SwiftUI-UI der Extension
+    ├── ShareView.swift                 ← SwiftUI-UI (Mehrfach-Upload)
     └── Info.plist                      ← Aktivierungsregel (nur PDFs)
 ```
