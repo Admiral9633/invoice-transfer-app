@@ -132,6 +132,37 @@ export class ApiService {
     }
   }
 
+  static async saveAnnotations(
+    id: number,
+    page: number,
+    canvasWidth: number,
+    objects: unknown[],
+  ): Promise<void> {
+    const response = await fetch(`${API_URL}/invoices/${id}/save-annotations/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page, canvas_width: canvasWidth, objects }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error((error as { error?: string }).error || 'Speichern fehlgeschlagen');
+    }
+  }
+
+  static async searchText(id: number, query: string): Promise<{
+    query: string;
+    count: number;
+    matches: { page: number; x: number; y: number; width: number; height: number; page_width: number }[];
+  }> {
+    const response = await fetch(`${API_URL}/invoices/${id}/search-text/?q=${encodeURIComponent(query)}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error((error as { error?: string }).error || 'Suche fehlgeschlagen');
+    }
+    return response.json();
+  }
+
   static async transferInvoice(id: number): Promise<Invoice> {
     const response = await fetch(`${API_URL}/invoices/${id}/transfer/`, {
       method: 'POST',

@@ -54,6 +54,9 @@ import {
   ListChecks,
   Copy,
   PanelRight,
+  EyeOff,
+  PenTool,
+  Search,
 } from 'lucide-react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -70,7 +73,7 @@ import { ApiService } from '@/lib/api';
 
 // ── Types (adapted from SnapOtter editor-store.ts) ─────────────────────────
 
-type ToolType = 'move' | 'brush' | 'eraser' | 'text' | 'rect' | 'ellipse' | 'arrow';
+type ToolType = 'move' | 'brush' | 'eraser' | 'text' | 'rect' | 'ellipse' | 'arrow' | 'redaction' | 'signature';
 
 interface LineObj {
   id: string;
@@ -124,7 +127,17 @@ interface ArrowObj {
   fill: string;
 }
 
-type CanvasObj = LineObj | RectObj | EllipseObj | TextObj | ArrowObj;
+interface RedactionObj {
+  id: string;
+  type: 'redaction';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: string;
+}
+
+type CanvasObj = LineObj | RectObj | EllipseObj | TextObj | ArrowObj | RedactionObj;
 
 interface AdjustmentValues {
   brightness: number;  // -1 .. 1  (Konva.Filters.Brighten)
@@ -545,6 +558,14 @@ export function ImageEditor({
   const [cursorOnCanvas, setCursorOnCanvas] = useState(false);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
+  // ── Full-text search ───────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatches, setSearchMatches] = useState<
+    { page: number; x: number; y: number; width: number; height: number; page_width: number }[]
+  >([]);
+  const [searchActiveIdx, setSearchActiveIdx] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
+
   // ── Canvas container size ──────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
@@ -572,7 +593,7 @@ export function ImageEditor({
   const shapeStart = useRef<{ x: number; y: number } | null>(null);
 
   // ── Live preview for shapes being drawn ───────────────────────────────
-  const [previewShape, setPreviewShape] = useState<RectObj | EllipseObj | ArrowObj | null>(null);
+  const [previewShape, setPreviewShape] = useState<RectObj | EllipseObj | ArrowObj | RedactionObj | null>(null);
 
   // ── Text overlay ───────────────────────────────────────────────────────
   const [textInput, setTextInput] = useState<{ canvasX: number; canvasY: number; stageX: number; stageY: number } | null>(null);
@@ -712,14 +733,14 @@ export function ImageEditor({
 
       isDrawing.current = true;
 
-      if (tool === 'brush' || tool === 'eraser') {
+      if (tool === 'brush' || tool === 'eraser' || tool === 'signature') {
         const id = genId();
         const newLine: LineObj = {
           id,
           type: 'line',
           points: [pos.x, pos.y],
-          stroke: tool === 'eraser' ? 'rgba(0,0,0,1)' : strokeColor,
-          strokeWidth: tool === 'eraser' ? eraserSize : strokeWidth,
+          stroke: tool === 'eraser' ? 'rgba(0,0,0,1)' : tool === 'signature' ? '#0a1a3f' : strokeColor,
+          strokeWidth: tool === 'eraser' ? eraserSize : tool === 'signature' ? Math.max(2, Math.round(strokeWidth * 0.75)) : strokeWidth,
           globalCompositeOperation: tool === 'eraser' ? 'destination-out' : 'source-over',
         };
         lastLineId.current = id;
@@ -729,6 +750,8 @@ export function ImageEditor({
 
         if (tool === 'rect') {
           setPreviewShape({ id: genId(), type: 'rect', x: pos.x, y: pos.y, width: 0, height: 0, stroke: strokeColor, strokeWidth, fill: 'transparent' });
+        } else if (tool === 'redaction') {
+          setPreviewShape({ id: genId(), type: 'redaction', x: pos.x, y: pos.y, width: 0, height: 0, fill: '#000000' });
         } else if (tool === 'ellipse') {
           setPreviewShape({ id: genId(), type: 'ellipse', x: pos.x, y: pos.y, radiusX: 0, radiusY: 0, stroke: strokeColor, strokeWidth, fill: 'transparent' });
         } else if (tool === 'arrow') {
@@ -750,7 +773,7 @@ export function ImageEditor({
 
       if (!isDrawing.current) return;
 
-      if ((tool === 'brush' || tool === 'eraser') && lastLineId.current) {
+      if ((tool === 'brush' || tool === 'eraser' || tool === 'signature') && lastLineId.current) {
         setObjects((prev) => {
           const idx = prev.findIndex((o) => o.id === lastLineId.current);
           if (idx === -1) return prev;
@@ -764,7 +787,7 @@ export function ImageEditor({
         const sx = shapeStart.current.x;
         const sy = shapeStart.current.y;
 
-        if (previewShape.type === 'rect') {
+        if (previewShape.type === 'rect' || previewShape.type === 'redaction') {
           setPreviewShape({
             ...previewShape,
             x: Math.min(sx, pos.x),
@@ -792,7 +815,7 @@ export function ImageEditor({
     if (!isDrawing.current) return;
     isDrawing.current = false;
 
-    if (tool === 'brush' || tool === 'eraser') {
+    if (tool === 'brush' || tool === 'eraser' || tool === 'signature') {
       setObjects((current) => {
         pushHistory(current);
         return current;
@@ -800,7 +823,7 @@ export function ImageEditor({
       lastLineId.current = null;
     } else if (previewShape) {
       const hasSize =
-        (previewShape.type === 'rect' && (previewShape.width > 2 || previewShape.height > 2)) ||
+        ((previewShape.type === 'rect' || previewShape.type === 'redaction') && (previewShape.width > 2 || previewShape.height > 2)) ||
         (previewShape.type === 'ellipse' && (previewShape.radiusX > 1 || previewShape.radiusY > 1)) ||
         previewShape.type === 'arrow';
 
@@ -844,39 +867,64 @@ export function ImageEditor({
     const stage = stageRef.current;
     if (!stage || !currentHtmlImage) return;
 
-    // If there are no drawings on the canvas, the PDF is still native —
-    // skip PNG conversion and just close.
-    if (objects.length === 0) {
+    const adjustmentsChanged =
+      adjustments.brightness !== 0 || adjustments.contrast !== 0 || adjustments.saturation !== 0;
+    const hasEraser = objects.some(
+      (o) => o.type === 'line' && o.globalCompositeOperation === 'destination-out',
+    );
+    const hasRedaction = objects.some((o) => o.type === 'redaction');
+
+    // Nothing changed → keep the PDF native and just close.
+    if (objects.length === 0 && !adjustmentsChanged) {
       onClose();
       return;
     }
 
-    // Temporarily resize stage to exact image dimensions and reset transform
-    // so we capture every pixel of the drawing at 1:1 resolution.
-    const savedW = stage.width();
-    const savedH = stage.height();
-    const savedScale = { x: stage.scaleX(), y: stage.scaleY() };
-    const savedPos = stage.position();
-
-    stage.width(currentHtmlImage.width);
-    stage.height(currentHtmlImage.height);
-    stage.scale({ x: 1, y: 1 });
-    stage.position({ x: 0, y: 0 });
-    stage.batchDraw();
-
-    const pngData = stage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
-
-    // Restore original stage state
-    stage.width(savedW);
-    stage.height(savedH);
-    stage.scale(savedScale);
-    stage.position(savedPos);
-    stage.batchDraw();
+    // Choose the save strategy:
+    //  • Redaction present  → vector path (true content removal via PyMuPDF).
+    //  • Eraser / image adjustments → rasterize (no vector equivalent).
+    //  • Otherwise          → vector path (keeps text selectable, lossless, small).
+    const useVector = hasRedaction || (!hasEraser && !adjustmentsChanged && objects.length > 0);
 
     setIsSaving(true);
     try {
-      await ApiService.savePngAsPdf(invoiceId, pngData, currentPage);
-      toast.success('Rechnung gespeichert');
+      if (useVector) {
+        // Eraser strokes have no vector representation — drop them.
+        const payload = objects.filter(
+          (o) => !(o.type === 'line' && o.globalCompositeOperation === 'destination-out'),
+        );
+        await ApiService.saveAnnotations(invoiceId, currentPage, currentHtmlImage.width, payload);
+        toast.success('Rechnung gespeichert', {
+          description: hasRedaction
+            ? 'Geschwärzte Bereiche wurden dauerhaft entfernt.'
+            : 'Vektoriell gespeichert – Text bleibt durchsuchbar.',
+        });
+      } else {
+        // Rasterize: resize stage to exact image dimensions and reset transform
+        // so we capture every pixel of the drawing at 1:1 resolution.
+        const savedW = stage.width();
+        const savedH = stage.height();
+        const savedScale = { x: stage.scaleX(), y: stage.scaleY() };
+        const savedPos = stage.position();
+
+        stage.width(currentHtmlImage.width);
+        stage.height(currentHtmlImage.height);
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: 0, y: 0 });
+        stage.batchDraw();
+
+        const pngData = stage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
+
+        // Restore original stage state
+        stage.width(savedW);
+        stage.height(savedH);
+        stage.scale(savedScale);
+        stage.position(savedPos);
+        stage.batchDraw();
+
+        await ApiService.savePngAsPdf(invoiceId, pngData, currentPage);
+        toast.success('Rechnung gespeichert');
+      }
       onClose();
     } catch (err) {
       toast.error('Speichern fehlgeschlagen', {
@@ -885,7 +933,37 @@ export function ImageEditor({
     } finally {
       setIsSaving(false);
     }
-  }, [invoiceId, onClose, currentHtmlImage, objects, currentPage]);
+  }, [invoiceId, onClose, currentHtmlImage, objects, currentPage, adjustments]);
+
+  // ── Full-text search ───────────────────────────────────────────────────
+  const runSearch = useCallback(async () => {
+    const q = searchQuery.trim();
+    if (!q) { setSearchMatches([]); return; }
+    setIsSearching(true);
+    try {
+      const res = await ApiService.searchText(invoiceId, q);
+      setSearchMatches(res.matches);
+      setSearchActiveIdx(0);
+      if (res.matches.length === 0) {
+        toast.info('Keine Treffer gefunden');
+      } else if (res.matches[0].page !== currentPage) {
+        await switchPage(res.matches[0].page);
+      }
+    } catch (err) {
+      toast.error('Suche fehlgeschlagen', { description: err instanceof Error ? err.message : '' });
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchQuery, invoiceId, currentPage, switchPage]);
+
+  const goToMatch = useCallback(async (idx: number) => {
+    const n = searchMatches.length;
+    if (n === 0) return;
+    const next = ((idx % n) + n) % n;
+    setSearchActiveIdx(next);
+    const m = searchMatches[next];
+    if (m.page !== currentPage) await switchPage(m.page);
+  }, [searchMatches, currentPage, switchPage]);
 
   // ── Zoom controls ──────────────────────────────────────────────────────
   const applyZoom = useCallback((delta: 1 | -1) => {
@@ -931,6 +1009,7 @@ export function ImageEditor({
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       if (e.key === 'v') setTool('move');
       if (e.key === 'b') setTool('brush');
+      if (e.key === 's') setTool('signature');
       if (e.key === 'e') setTool('eraser');
       if (e.key === 't') setTool('text');
       if (e.key === 'r') setTool('rect');
@@ -1005,6 +1084,20 @@ export function ImageEditor({
             pointerWidth={10}
           />
         );
+      case 'redaction':
+        return (
+          <Rect
+            key={obj.id}
+            x={obj.x}
+            y={obj.y}
+            width={obj.width}
+            height={obj.height}
+            fill={obj.fill}
+            stroke="#ef4444"
+            strokeWidth={1 / (stageRef.current?.scaleX() ?? 1)}
+            dash={[6 / (stageRef.current?.scaleX() ?? 1), 4 / (stageRef.current?.scaleX() ?? 1)]}
+          />
+        );
     }
   };
 
@@ -1018,11 +1111,13 @@ export function ImageEditor({
   const TOOLS: { id: ToolType; Icon: React.ElementType; label: string; shortcut: string }[] = [
     { id: 'move',    Icon: MousePointer, label: 'Verschieben',   shortcut: 'V' },
     { id: 'brush',   Icon: Pen,          label: 'Pinsel',        shortcut: 'B' },
+    { id: 'signature', Icon: PenTool,    label: 'Signatur',      shortcut: 'S' },
     { id: 'eraser',  Icon: Eraser,       label: 'Radiergummi',   shortcut: 'E' },
     { id: 'text',    Icon: Type,         label: 'Text',          shortcut: 'T' },
     { id: 'rect',    Icon: Square,       label: 'Rechteck',      shortcut: 'R' },
     { id: 'ellipse', Icon: Circle,       label: 'Ellipse',       shortcut: '' },
     { id: 'arrow',   Icon: MoveRight,    label: 'Pfeil',         shortcut: '' },
+    { id: 'redaction', Icon: EyeOff,     label: 'Schwärzen (echt)', shortcut: '' },
   ];
 
   // ── JSX ────────────────────────────────────────────────────────────────
@@ -1108,7 +1203,11 @@ export function ImageEditor({
 
         <Button size="sm" onClick={handleSave} disabled={isSaving} className="gap-1.5">
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {isSaving ? 'Speichern…' : objects.length === 0 ? 'Schließen' : 'Speichern'}
+          {isSaving
+            ? 'Speichern…'
+            : objects.length === 0 && adjustments.brightness === 0 && adjustments.contrast === 0 && adjustments.saturation === 0
+              ? 'Schließen'
+              : 'Speichern'}
         </Button>
 
         <Tooltip>
@@ -1211,6 +1310,29 @@ export function ImageEditor({
               {previewShape && renderObj(previewShape)}
             </Layer>
 
+            {/* Search-match highlights (not part of saved objects) */}
+            {searchMatches.length > 0 && currentHtmlImage && (
+              <Layer listening={false}>
+                {searchMatches.map((m, i) => {
+                  if (m.page !== currentPage || !m.page_width) return null;
+                  const f = currentHtmlImage.width / m.page_width;
+                  const active = i === searchActiveIdx;
+                  return (
+                    <Rect
+                      key={i}
+                      x={m.x * f}
+                      y={m.y * f}
+                      width={m.width * f}
+                      height={m.height * f}
+                      fill={active ? 'rgba(249,115,22,0.45)' : 'rgba(250,204,21,0.4)'}
+                      stroke={active ? '#f97316' : '#facc15'}
+                      strokeWidth={1 / (stageRef.current?.scaleX() ?? 1)}
+                    />
+                  );
+                })}
+              </Layer>
+            )}
+
             {tool === 'eraser' && cursorOnCanvas && (
               <Layer listening={false}>
                 <KonvaCircle
@@ -1228,6 +1350,50 @@ export function ImageEditor({
 
         {/* ── Right panel ──────────────────────────────────────────── */}
         {showPanel && <div className="w-56 sm:w-64 flex flex-col border-l border-border bg-card shrink-0 overflow-y-auto">
+
+          {/* Search panel */}
+          <div className="p-4 space-y-2 border-b border-border">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+              Im PDF suchen
+            </p>
+            <div className="flex items-center gap-1">
+              <div className="relative flex-1">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') runSearch(); }}
+                  placeholder="Text suchen…"
+                  spellCheck={false}
+                  className="w-full bg-input text-foreground border border-border rounded pl-7 pr-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <Button
+                size="icon-sm"
+                variant="secondary"
+                onClick={runSearch}
+                disabled={isSearching}
+                title="Suchen"
+              >
+                {isSearching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+            {searchMatches.length > 0 && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="tabular-nums">
+                  {searchActiveIdx + 1} / {searchMatches.length} Treffer
+                </span>
+                <div className="flex items-center gap-0.5">
+                  <Button size="icon-sm" variant="ghost" onClick={() => goToMatch(searchActiveIdx - 1)} title="Vorheriger Treffer">
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon-sm" variant="ghost" onClick={() => goToMatch(searchActiveIdx + 1)} title="Nächster Treffer">
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Pages panel */}
           <div className="p-4 space-y-3">
@@ -1427,15 +1593,26 @@ export function ImageEditor({
               Optionen
             </p>
 
+            {/* Redaction hint */}
+            {tool === 'redaction' && (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Ziehe ein Rechteck über sensible Daten. Beim Speichern wird der
+                darunterliegende Inhalt <span className="text-foreground font-medium">dauerhaft entfernt</span> –
+                keine bloße Überdeckung.
+              </p>
+            )}
+
             {/* Color */}
-            <div className="flex items-center gap-3">
-              <Label className="text-xs w-16 shrink-0">Farbe</Label>
-              <ColorPicker value={strokeColor} onChange={setStrokeColor} />
-              <span className="text-xs font-mono text-muted-foreground">{strokeColor}</span>
-            </div>
+            {tool !== 'redaction' && tool !== 'signature' && tool !== 'eraser' && (
+              <div className="flex items-center gap-3">
+                <Label className="text-xs w-16 shrink-0">Farbe</Label>
+                <ColorPicker value={strokeColor} onChange={setStrokeColor} />
+                <span className="text-xs font-mono text-muted-foreground">{strokeColor}</span>
+              </div>
+            )}
 
             {/* Stroke width */}
-            {tool !== 'text' && tool !== 'move' && (
+            {tool !== 'text' && tool !== 'move' && tool !== 'redaction' && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Stärke</Label>
