@@ -670,11 +670,11 @@ const chartData = [
 const chartConfig = {
   desktop: {
     label: "Desktop",
-    color: "var(--primary)",
+    color: "var(--chart-1)",
   },
   mobile: {
     label: "Mobile",
-    color: "var(--primary)",
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig
 function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
