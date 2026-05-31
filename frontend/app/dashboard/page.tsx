@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { useEffect, useState, useMemo } from 'react';
 import { format, subDays, eachDayOfInterval, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -17,7 +18,15 @@ import {
   Label,
 } from 'recharts';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   ChartContainer,
   ChartTooltip,
@@ -28,6 +37,17 @@ import {
 import type { ChartConfig } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from '@/components/ui/toggle-group';
 import {
   Table,
   TableBody,
@@ -110,8 +130,14 @@ function StatCard({
 }
 
 export default function DashboardPage() {
+  const isMobile = useIsMobile();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = React.useState('90d');
+
+  React.useEffect(() => {
+    if (isMobile) setTimeRange('7d');
+  }, [isMobile]);
 
   useEffect(() => {
     ApiService.getInvoices()
@@ -133,8 +159,9 @@ export default function DashboardPage() {
   }, [invoices]);
 
   const chartData = useMemo(() => {
+    const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
     return eachDayOfInterval({
-      start: subDays(new Date(), 29),
+      start: subDays(new Date(), days - 1),
       end: new Date(),
     }).map(day => {
       const dayStr = format(day, 'yyyy-MM-dd');
@@ -149,7 +176,7 @@ export default function DashboardPage() {
         ).length,
       };
     });
-  }, [invoices]);
+  }, [invoices, timeRange]);
 
   const sorted = useMemo(
     () => [...invoices].sort(
@@ -221,21 +248,58 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Area Chart */}
-      <Card>
+      {/* Area Chart — shadcn "Area Chart - Interactive" */}
+      <Card className="@container/card">
         <CardHeader>
           <CardTitle>Uploads pro Tag</CardTitle>
-          <CardDescription>Letzte 30 Tage — Hochgeladen vs. erfolgreich übertragen</CardDescription>
+          <CardDescription>
+            <span className="hidden @[540px]/card:block">
+              Hochgeladen vs. erfolgreich übertragen
+            </span>
+            <span className="@[540px]/card:hidden">Hochgeladen vs. übertragen</span>
+          </CardDescription>
+          <CardAction>
+            <ToggleGroup
+              multiple={false}
+              value={timeRange ? [timeRange] : []}
+              onValueChange={(value) => setTimeRange(value[0] ?? '90d')}
+              variant="outline"
+              className="hidden *:data-[slot=toggle-group-item]:px-4! @[767px]/card:flex"
+            >
+              <ToggleGroupItem value="90d">Letzte 3 Monate</ToggleGroupItem>
+              <ToggleGroupItem value="30d">Letzte 30 Tage</ToggleGroupItem>
+              <ToggleGroupItem value="7d">Letzte 7 Tage</ToggleGroupItem>
+            </ToggleGroup>
+            <Select
+              value={timeRange}
+              onValueChange={(value) => {
+                if (value !== null) setTimeRange(value);
+              }}
+            >
+              <SelectTrigger
+                className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
+                size="sm"
+                aria-label="Zeitraum wählen"
+              >
+                <SelectValue placeholder="Letzte 3 Monate" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="90d" className="rounded-lg">Letzte 3 Monate</SelectItem>
+                <SelectItem value="30d" className="rounded-lg">Letzte 30 Tage</SelectItem>
+                <SelectItem value="7d" className="rounded-lg">Letzte 7 Tage</SelectItem>
+              </SelectContent>
+            </Select>
+          </CardAction>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
           {loading ? (
             <Skeleton className="h-[250px] w-full" />
           ) : (
             <ChartContainer config={chartConfig} className="aspect-auto h-[250px] w-full">
-              <AreaChart data={chartData} margin={{ top: 8, right: 12, left: 12, bottom: 0 }}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="fillHochgeladen" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-hochgeladen)" stopOpacity={0.8} />
+                    <stop offset="5%" stopColor="var(--color-hochgeladen)" stopOpacity={1.0} />
                     <stop offset="95%" stopColor="var(--color-hochgeladen)" stopOpacity={0.1} />
                   </linearGradient>
                   <linearGradient id="fillUebertragen" x1="0" y1="0" x2="0" y2="1">
@@ -249,8 +313,7 @@ export default function DashboardPage() {
                   tickLine={false}
                   axisLine={false}
                   tickMargin={8}
-                  tick={{ fontSize: 11 }}
-                  minTickGap={24}
+                  minTickGap={32}
                   interval="preserveStartEnd"
                 />
                 <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
