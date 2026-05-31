@@ -1,0 +1,45 @@
+# ── Python / Django ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# Database & user media (do not commit runtime data)
+backend/db.sqlite3
+*.sqlite3
+backend/media/
+backend/staticfiles/
+
+# ── Node / Next.js ──────────────────────────────────────────────
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Runtime folders ─────────────────────────────────────────────
+ftp_inbox/
+
+# ── iOS / Xcode ─────────────────────────────────────────────────
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+
+# ── Editor / OS ─────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
