@@ -27,7 +27,7 @@ export default function RootLayout({
     <html lang="de" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <TooltipProvider delayDuration={400}>
+          <TooltipProvider delay={400}>
             <SidebarProvider>
               <AppSidebar />
               <SidebarInset>

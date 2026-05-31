@@ -131,7 +131,7 @@ export function InvoiceList() {
                   {invoice.status !== 'processing' && (
                     <button
                       onClick={() => handleTransfer(invoice.id)}
-                      disabled={transferring === invoice.id || invoice.status === 'processing'}
+                      disabled={transferring === invoice.id}
                       className="flex items-center gap-1.5 text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                       title="Zu Lexware & Paperless übertragen"
                     >

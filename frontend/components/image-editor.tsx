@@ -26,6 +26,7 @@ import {
   Circle as KonvaCircle,
 } from 'react-konva';
 import Konva from 'konva';
+import type { Filter as KonvaFilter } from 'konva/lib/Node';
 import {
   X,
   Save,
@@ -628,7 +629,7 @@ export function ImageEditor({
     const node = imageRef.current;
     if (!node || !currentHtmlImage) return;
 
-    const filters: Konva.Filter[] = [];
+    const filters: KonvaFilter[] = [];
     if (adjustments.brightness !== 0) {
       filters.push(Konva.Filters.Brighten);
       node.brightness(adjustments.brightness);
@@ -1630,7 +1631,7 @@ export function ImageEditor({
             )}
 
             {/* Stroke width */}
-            {tool !== 'text' && tool !== 'move' && tool !== 'redaction' && tool !== 'whiteout' && (
+            {tool !== 'text' && tool !== 'redaction' && tool !== 'whiteout' && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Stärke</Label>
